@@ -1,0 +1,246 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ * Build Bubble Sorter links.
+ */
+function bubble_sort_menu() {
+  $items = array();
+  $items['bubble-sorter'] = array(
+    'title' => 'Bubble Sorter',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('bubble_sorter_page'),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['admin/config/bubble-sorter'] = array(
+    'title' => 'Bubble Sorter Configuration',
+    'description' => 'Configuration for the Bubble Sorter',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('bubble_sorter_config_form'),
+    'access arguments' => array('administer users'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+
+/**
+ * Build initial Bubble Sorter page.
+ */
+function bubble_sorter_page($form, &$form_state) {
+  // Set breadcrumb, because why not?
+  $breadcrumb = array();
+  $breadcrumb[] = l('Home', '<front>');
+  $breadcrumb[] = l('Bubble Sorter', 'bubble-sorter');
+  drupal_set_breadcrumb($breadcrumb);
+
+  // Get and build the variables
+  $min = variable_get('bs_min');
+  $max = variable_get('bs_max');
+  $total = variable_get('bs_total');
+  $to_sort = array();
+  $rows = array();
+
+  // Reset persistant variable for max number of steps to take.
+  if (!$form_state['rebuild']) {
+    variable_set('bs_steps', $total);
+  }
+  $steps = variable_get('bs_steps');
+
+  // If initializing Bubble Sorter,
+  // build out the vector to sort.
+  // Otherwise get values to sort from $form_state.
+  if (!$form_state['rebuild']) {
+    for ($i=0;$i<$total;$i++) {
+      $value = rand($min, $max);
+      if (!in_array($value, $to_sort)) {
+        $html = '<div style="width:' . (($value/$max)*100) . '%">' . $value . '</div>';
+        $to_sort[]['value'] = $value;
+        $rows[] = array($html);
+      }
+    }
+  } else {
+    // Loop through $form_state values; don't use for() loop
+    // in case data was destroyed for some reason.
+    foreach ($form_state['storage']['values'] as $key => $value) {
+      $to_sort[$key]['value'] = $value['value'];
+      if (isset($value['change'])) {
+        $to_sort[$key]['change'] = $value['change'];
+      }
+    }
+  }
+
+  // Turn off all vectors that are complete.
+  if ($steps < $total) {
+    for ($i=1; $i<=($total-$steps); $i++) {
+      $to_sort[$total-$i]['change'] = 'off';
+    }
+  }
+
+  $sort_form = array();
+  foreach ($to_sort as $i => $value) {
+    if ($form_state['rebuild']) {
+      $html = '<div style="width:' . (($value['value']/$max)*100).'%"' . (isset($value['change']) ? ' class="' . $value['change'] . '"' : '') . '>' . $value['value'] . '</div>';
+      $to_sort[$i]['value'] = $value['value'];
+      if (isset($value['change'])) {
+        $to_sort[$i]['change'] = $value['change'];
+      }
+      $rows[] = array($html);
+    }
+    $sort_form["sort-$i"] = array(
+      '#type' => 'textfield',
+      '#title' => t('Index: @index', array('@index' => $i)),
+      '#value' => $value['value'],
+    );
+  }
+
+  $sort_form['actions'] = array('#type' => 'actions');
+  $sort_form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Step'),
+    '#submit' => array('bubble_sorter_process'),
+  );
+  $sort_form['actions']['reset'] = array(
+    '#type' => 'submit',
+    '#value' => t('Shuffle'),
+    '#submit' => array('bubble_sorter_reset'),
+  );
+
+  // Disable stepper if at end of sorting.
+  if ($steps == 2) {
+    $sort_form['actions']['submit']['#attributes']['class'] = array('disabled');
+  }
+
+  // Start building out the Bubble Sorter.
+  // Let's start by just printing out some info.
+  $info = array(
+    '#type' => 'markup',
+    '#markup' => '<p>Sorting ' . $total . ' integers between the values ' . $min . ' to ' . $max . '.</p>',
+  );
+
+  // Build sorting/presentation table.
+  $table = array(
+    '#theme' => 'table',
+    '#rows' => $rows,
+    '#attributes' => array('id' => 'to-sort'),
+  );
+
+  // Custom CSS and JS.
+  // Would normally be an external file but doing this to save a bit of time and unnecessary file bloat.
+  $css = '#to-sort tr { background-color:transparent; }' .
+    '#to-sort tr td { padding:0; }' .
+    '#to-sort td div { background-color:#EEE; border:1px solid #000; margin-bottom:5px; min-width:8px; padding:3px 6px; }' .
+    '#to-sort td div.up { background-color:#B7FFB7; border-color:#0F0; }' .
+    '#to-sort td div.down { background-color:#ED7C7C; border-color:#F00; }' .
+    '#to-sort td div.none { background-color:#9494F5; border-color:#00F; }' .
+    '#to-sort td div.off { background-color:#666; }' .
+    '#edit-submit.disabled { opacity:.5; }' .
+    '#bubble-sorter-page .form-item.form-type-textfield { display:none; }';
+  drupal_add_css($css, array('type' => 'inline'));
+
+  $js = '(function($) { $(function() { $("#edit-submit.disabled").attr("disabled", "disabled"); }); })(jQuery);';
+  drupal_add_js($js, array('type' => 'inline'));
+
+  $output = array(
+    $info,
+    $table,
+    $sort_form,
+  );
+
+  return $output;
+}
+
+/**
+ * Submit handler for Bubble Sort.
+ * Where the magic(a.k.a. sorting) happens.
+ */
+function bubble_sorter_process($form, &$form_state) {
+  // Keep the form alive.
+  $form_state['rebuild'] = TRUE;
+
+  // Declare variables.
+  $max = variable_get('bs_total');
+  $total = !empty(variable_get('bs_steps')) ? variable_get('bs_steps') : variable_get('bs_total');
+  $vector = array();
+
+  // Determine step. If at end of cycle, repeat.
+  $form_state['step'] = (isset($form_state['step'])) ? $form_state['step'] : 0;
+  if ($form_state['step'] == ($total-1)) {
+    $form_state['step'] = 0;
+    variable_set('bs_steps', $total-1);
+  }
+  $step = $form_state['step'];
+
+  // Transferring vector to another array.
+  foreach ($form_state['input'] as $key => $value) {
+    if(substr($key, 0, 5) == 'sort-') {
+      $i = str_replace('sort-', '', $key);
+      $vector[$i]['value'] = $value;
+      if (($i+1) == $total && $max != $total) {
+        $vector[$i+1]['change'] = 'off';
+      }
+    }
+  }
+
+  // Take the next step (aka: actually sort the vector).
+  if ($vector[$step]['value'] < $vector[$step+1]['value']) {
+    $tmp = $vector[$step];
+    $vector[$step] = $vector[$step+1];
+    $vector[$step]['change'] = 'up';
+    $vector[$step+1] = $tmp;
+    $vector[$step+1]['change'] = 'down';
+  }
+  else {
+    $vector[$step]['change'] = $vector[$step+1]['change'] = 'none';
+  }
+
+  // Progress step forward.
+  $form_state['step'] += 1;
+
+  // Transfer sorted vector.
+  $form_state['storage']['values'] = $vector;
+}
+
+/**
+ * Submit handler for Bubble Sort.
+ * Resets the form and gets a new vector.
+ */
+function bubble_sorter_reset($form, &$form_state) {
+  $form_state['rebuild'] = FALSE;
+}
+
+/**
+ * Implements drupal_get_form.
+ * Builds bubble sorter config.
+ */
+function bubble_sorter_config_form($form, &$form_state) {
+  $form = array();
+  $form['bs_min'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Smallest Number'),
+    '#default_value' => variable_get('bs_min'),
+    '#description' => t('The smallest integer to sort.'),
+  );
+  $form['bs_max'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Largest Number'),
+    '#default_value' => variable_get('bs_max'),
+    '#description' => t('The largest integer to sort.'),
+  );
+  $form['bs_total'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Total Vectors'),
+    '#default_value' => variable_get('bs_total'),
+    '#description' => t('The total number of integers to sort.'),
+  );
+  $form['note_container'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Notes'),
+  );
+  $form['note_container']['note'] = array(
+    '#markup' => '<ul>' . '<li>There is <i>no</i> form validation at the moment.</li>' . '</ul>',
+  );
+
+  return system_settings_form($form);
+}

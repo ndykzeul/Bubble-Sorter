@@ -1,0 +1,26 @@
+<?php
+
+/**
+ * Implements hook_enable()
+ * Let's set the default values of the Bubble Sorter.
+ * Normally this would be using hook_install() but using
+ * _enable for ease of testing/building.
+ */
+function bubble_sort_enable() {
+  variable_set('bs_min', 0);
+  variable_set('bs_max', 100);
+  variable_set('bs_total', 10);
+}
+
+/**
+ * Implements hook_disable()
+ * Because... well I don't know. This really isn't necessary.
+ * Normally this would be using hook_uninstall() but using
+ * _disable for ease of testing/building.
+ */
+function bubble_sort_disable() {
+  variable_del('bs_min');
+  variable_del('bs_max');
+  variable_del('bs_total');
+  variable_del('bs_steps');
+}

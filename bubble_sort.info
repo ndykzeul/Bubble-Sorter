@@ -1,0 +1,4 @@
+name = Bubble Sorter
+description = A Drupal 7 Bubble Sorter Module. Built to give a basic demonstration of my coding abilities. Extra comments added to explain thought process a bit more - by <a href="mailto:nicholas.dykzeul@gmail.com">Nicholas Dykzeul</a>
+core = 7.x
+configure = admin/config/bubble-sorter
